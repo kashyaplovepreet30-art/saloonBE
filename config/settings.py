@@ -24,6 +24,9 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-2sy$g!+@h%k^iqmp0_i
 DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() == "true"
 
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if host.strip()]
+# Safety net: Always allow Render's backend domain so misconfigured env vars don't block the API
+ALLOWED_HOSTS.append(".onrender.com")
+
 
 # Application definition
 
