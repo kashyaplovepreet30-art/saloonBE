@@ -115,18 +115,44 @@ if not DATABASE_URL:
         import pymysql
 
         pymysql.install_as_MySQLdb()
+        
+        db_host = os.getenv("DB_HOST", "127.0.0.1").strip().strip("'\"")
+        db_port = os.getenv("DB_PORT", "3306").strip().strip("'\"")
+        db_name = os.getenv("DB_NAME", "salon_db").strip().strip("'\"")
+        db_user = os.getenv("DB_USER", "root").strip().strip("'\"")
+        db_pass = os.getenv("DB_PASSWORD", "").strip().strip("'\"")
+
+        # Strip protocol if accidentally included in DB_HOST (e.g., mysql://...)
+        if "://" in db_host:
+            db_host = db_host.split("://")[-1]
+        if "/" in db_host:
+            db_host = db_host.split("/")[0]
+
+        # Extract port if host was entered as host.aivencloud.com:28608
+        if ":" in db_host and not db_host.startswith("["):
+            host_parts = db_host.split(":")
+            db_host = host_parts[0]
+            db_port = host_parts[1]
+
+        db_options = {
+            "charset": "utf8mb4",
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+        }
+
+        # Aiven MySQL requires SSL
+        ssl_mode = os.getenv("DB_SSL_MODE", "").upper()
+        if ssl_mode or "aivencloud.com" in db_host:
+            db_options["ssl"] = {"ssl_mode": ssl_mode or "REQUIRED"}
+
         DATABASES = {
             "default": {
                 "ENGINE": DB_ENGINE,
-                "NAME": os.getenv("DB_NAME", "salon_db"),
-                "USER": os.getenv("DB_USER", "root"),
-                "PASSWORD": os.getenv("DB_PASSWORD", "root"),
-                "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-                "PORT": os.getenv("DB_PORT", "3306"),
-                "OPTIONS": {
-                    "charset": "utf8mb4",
-                    "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-                },
+                "NAME": db_name,
+                "USER": db_user,
+                "PASSWORD": db_pass,
+                "HOST": db_host,
+                "PORT": db_port,
+                "OPTIONS": db_options,
             }
         }
     else:
@@ -136,6 +162,7 @@ if not DATABASE_URL:
                 "NAME": os.getenv("DB_NAME", str(BASE_DIR / "db.sqlite3")),
             }
         }
+
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -209,6 +236,8 @@ SIMPLE_JWT = {
 }
 
 # CORS
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL", "False").lower() == "true"
+
 raw_cors = os.getenv("CORS_ALLOWED_ORIGINS", "")
 if raw_cors:
     origins = []
@@ -229,9 +258,14 @@ else:
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        "https://saloon-fe.vercel.app",
     ]
 
-
+# Automatically allow Vercel domains (production & previews) and Render frontend apps
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+    r"^https://.*\.onrender\.com$",
+]
 
 CORS_ALLOW_CREDENTIALS = True
 
