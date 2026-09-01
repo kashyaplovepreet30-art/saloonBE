@@ -23,7 +23,7 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-2sy$g!+@h%k^iqmp0_i
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if host.strip()]
 
 # Application definition
 
@@ -57,6 +57,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -64,6 +65,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
 
 ROOT_URLCONF = "config.urls"
 
@@ -84,35 +86,56 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# SQLite keeps a fresh checkout runnable without requiring a local MySQL
-# server. Set DB_ENGINE to django.db.backends.mysql for deployment.
+# Database Configuration
+# Automatically supports:
+# 1. DATABASE_URL (Render PostgreSQL or external database URL) via dj_database_url
+# 2. Explicit MySQL environment variables (DB_ENGINE=django.db.backends.mysql)
+# 3. Local SQLite default
+DATABASE_URL = os.getenv("DATABASE_URL")
 DB_ENGINE = os.getenv("DB_ENGINE", "django.db.backends.sqlite3")
 
-if DB_ENGINE == "django.db.backends.mysql":
-    import pymysql
+if DATABASE_URL:
+    try:
+        import dj_database_url
+        DATABASES = {
+            "default": dj_database_url.config(
+                default=DATABASE_URL,
+                conn_max_age=600,
+                conn_health_checks=True,
+            )
+        }
+        if DATABASES["default"].get("ENGINE") == "django.db.backends.mysql":
+            import pymysql
+            pymysql.install_as_MySQLdb()
+    except Exception:
+        DATABASE_URL = None
 
-    pymysql.install_as_MySQLdb()
-    DATABASES = {
-        "default": {
-            "ENGINE": DB_ENGINE,
-            "NAME": os.getenv("DB_NAME", "salon_db"),
-            "USER": os.getenv("DB_USER", "root"),
-            "PASSWORD": os.getenv("DB_PASSWORD", "root"),
-            "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-            "PORT": os.getenv("DB_PORT", "3306"),
-            "OPTIONS": {
-                "charset": "utf8mb4",
-                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-            },
+if not DATABASE_URL:
+    if DB_ENGINE == "django.db.backends.mysql":
+        import pymysql
+
+        pymysql.install_as_MySQLdb()
+        DATABASES = {
+            "default": {
+                "ENGINE": DB_ENGINE,
+                "NAME": os.getenv("DB_NAME", "salon_db"),
+                "USER": os.getenv("DB_USER", "root"),
+                "PASSWORD": os.getenv("DB_PASSWORD", "root"),
+                "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+                "PORT": os.getenv("DB_PORT", "3306"),
+                "OPTIONS": {
+                    "charset": "utf8mb4",
+                    "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+                },
+            }
         }
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": DB_ENGINE,
-            "NAME": os.getenv("DB_NAME", str(BASE_DIR / "db.sqlite3")),
+    else:
+        DATABASES = {
+            "default": {
+                "ENGINE": DB_ENGINE,
+                "NAME": os.getenv("DB_NAME", str(BASE_DIR / "db.sqlite3")),
+            }
         }
-    }
 
 AUTH_USER_MODEL = "accounts.User"
 
@@ -143,6 +166,16 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -176,15 +209,29 @@ SIMPLE_JWT = {
 }
 
 # CORS
-CORS_ALLOWED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS",
-    # 8080 is the TanStack Start dev server default; 8081 is its fallback when
-    # 8080 is taken. 5173/5174 are kept for plain Vite tooling.
-    "http://localhost:8080,http://127.0.0.1:8080,"
-    "http://localhost:8081,http://127.0.0.1:8081,"
-    "http://localhost:5173,http://127.0.0.1:5173,"
-    "http://localhost:5174,http://127.0.0.1:5174",
-).split(",")
+raw_cors = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if raw_cors:
+    origins = []
+    for item in raw_cors.split(","):
+        item = item.strip()
+        if item:
+            if not item.startswith("http://") and not item.startswith("https://"):
+                item = f"https://{item}"
+            origins.append(item)
+    CORS_ALLOWED_ORIGINS = origins
+else:
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
+
+
 
 CORS_ALLOW_CREDENTIALS = True
 
